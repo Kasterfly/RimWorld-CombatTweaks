@@ -1,0 +1,17 @@
+<Defs>
+  <StatCategoryDef>
+    <defName>CombatTweaksCategory</defName>
+    <label>Combat Tweaks Stats</label>
+    <displayOrder>999</displayOrder>
+  </StatCategoryDef>
+  
+  <StatDef>
+    <defName>CombatTweaksStat</defName>
+    <label>Average Damage Tracked</label>
+    <description>Shows the running average effect of damage (for weapons) / damage reduction (for armor) of this item.</description>
+    <category>CombatTweaksCategory</category>
+    <defaultBaseValue>0</defaultBaseValue>
+    <toStringStyle>FloatMaxOne</toStringStyle>
+    <workerClass>Kasterfly.CombatTweaks.Stats.StatWorker_CombatTweaks</workerClass>
+  </StatDef>
+</Defs>
