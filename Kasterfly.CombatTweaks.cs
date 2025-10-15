@@ -9,6 +9,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
 using System.Reflection.Emit;
+using Kasterfly.CombatTweaks.HarmonyPatches;
 using UnityEngine;
 using Verse;
 using static Kasterfly.CombatTweaks.CombatTweaksModSettings;
@@ -62,8 +63,6 @@ namespace Kasterfly.CombatTweaks
 
     }
 
-
-
     public class CombatTweaksMod : Mod
     {
         public static CombatTweaksModSettings Settings;
@@ -83,7 +82,7 @@ namespace Kasterfly.CombatTweaks
 
             InitSettings();
             YayoUnpatcher.DoYayoUnpatch();
-            Log.Message("[CombatTweaks] CombatTweaks (v1.1.12) for RimWorld 1.6");
+            Log.Message("[CombatTweaks] CombatTweaks (v1.1.13) for RimWorld 1.6");
         }
 
         public override string SettingsCategory() => "Combat Tweaks";
@@ -283,7 +282,7 @@ namespace Kasterfly.CombatTweaks
                 settingsGui.CreateSlider(() => Settings.armorStr, v => Settings.armorStr = v, 0f, 5f, () => $"Armor Strength: {formatBuff(Settings.armorStr)}", 0.05f),
                 60f);
             settingsGui.AddItem("wepRange", "wepRange", "Tweaks",
-                settingsGui.CreateSlider(() => Settings.wepRange, v => Settings.wepRange = v, 0f, 5f, () => $"Weapon Range Modifier (Requires Restart): {formatBuff(Settings.wepRange)}", 0.01f),
+                settingsGui.CreateSlider(() => Settings.wepRange, v => Settings.wepRange = v, 0f, 5f, () => $"Weapon Range Modifier: {formatBuff(Settings.wepRange)}", 0.01f),
                 60f);
             settingsGui.AddItem("bulletSpread", "bulletSpread", "Tweaks",
                 settingsGui.CreateSlider(() => Settings.bulletSpread, v => Settings.bulletSpread = v, 0f, 2f, () => $"Projectile Spread Amount: {(Settings.bulletSpread * 100):F0}%", 0.01f),
@@ -427,7 +426,6 @@ namespace Kasterfly.CombatTweaks
             settingsGui.AddDescription("insectBuff", "Buff to armor values for inscect pawns.");
             settingsGui.AddDescription("anomalyBuff", "Buff to armor values for anomaly related pawns.");
             settingsGui.AddDescription("humanLikeBuff", "Buff to armor values for human-like pawns (should include baseliners and most other human xenotypes).");
-
         }
 
         public static string formatBuff(float percent, float netural = 1f)
@@ -488,7 +486,7 @@ namespace Kasterfly.CombatTweaks
             Custom,
             Yayo
         }
-
+        public HashSet<string> favorites = null;
         public SharpConversionMode sharpConversionMode = SharpConversionMode.ArmorThreshold;
         public FinalArmorCalculations finalArmorCalculations = FinalArmorCalculations.Custom;
         public bool yayoCombatCompat = false;
@@ -520,6 +518,8 @@ namespace Kasterfly.CombatTweaks
         public float insectBuff = 1.0f;
         public float friendlyFireMultiplier = 1.0f;
         public float wepRange = 1.0f;
+        public float lastRangeBuff = 1.0f;
+        public float lastArmorCap = 2.0f;
         public float enemyDamageMultiplier = 1.0f;
         public float bulletSpread = 0.0f;
         public float deflectionChanceMultiplier = 1.0f;
@@ -570,6 +570,7 @@ namespace Kasterfly.CombatTweaks
             Scribe_Values.Look(ref doAdrenaline, "doAdrenaline", true);
             Scribe_Values.Look(ref skillsEffectBulletSpread, "skillsEffectBulletSpread", true);
             Scribe_Values.Look(ref maxArmorAmount, "maxArmorAmount", 20.1f);
+            Scribe_Values.Look(ref lastArmorCap, "lastArmorCap", 20.1f);
             Scribe_Values.Look(ref armorPenImportance, "armorPenImportance", 1.0f);
             Scribe_Values.Look(ref itemDurabilityMultiplier, "itemDurabilityMultiplier", 1.5f);
             Scribe_Values.Look(ref techLevelBoost, "techLevelBoost", 0.1f);
@@ -584,6 +585,7 @@ namespace Kasterfly.CombatTweaks
             Scribe_Values.Look(ref insectBuff, "insectBuff", 1f);
             Scribe_Values.Look(ref humanLikeBuff, "humanLikeBuff", 1f);
             Scribe_Values.Look(ref wepRange, "wepRange", 1f);
+            Scribe_Values.Look(ref lastRangeBuff, "lastRangeBuff", 1f);
             Scribe_Values.Look(ref friendlyFireMultiplier, "friendlyFireMultiplier", 1f);
             Scribe_Values.Look(ref enemyDamageMultiplier, "enemyDamageMultiplier", 1f);
             Scribe_Values.Look(ref deflectionChanceMultiplier, "deflectionChanceMultiplier", 1f);
@@ -596,6 +598,18 @@ namespace Kasterfly.CombatTweaks
             Scribe_Values.Look(ref adrenalineChance, "adrenalineChance", 0.1f);
             Scribe_Values.Look(ref durabilityEffectsArmorMult, "durabilityEffectsArmorMult", 0.004f);
             Scribe_Values.Look(ref thickArmorEffectivenessLoss, "thickArmorEffectivenessLoss", 0.5f);
+            Scribe_Collections.Look(ref favorites, "favorites", LookMode.Value);
+
+            if (favorites == null)
+            {
+                favorites = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+                {
+                    "doTracking",
+                    "debugLogging",
+                    "showDetails"
+                };
+            }
+
         }
 
         public void ResetToDefaults()
@@ -865,6 +879,9 @@ namespace Kasterfly.SettingsBuilder
 
         public void DrawSettings(Rect canvas)
         {
+            if (CombatTweaksMod.Settings.favorites == null)
+                CombatTweaksMod.Settings.favorites = new HashSet<string>();
+
             var leftRect = new Rect(canvas.x, canvas.y, 180f, canvas.height);
             var rightRect = new Rect(canvas.x + 185f, canvas.y, canvas.width - 190f, canvas.height);
 
@@ -877,8 +894,10 @@ namespace Kasterfly.SettingsBuilder
                     selectedCategory = cat;
                     scrollPos = Vector2.zero;
                 }
+
                 y += 35f;
             }
+
             Widgets.EndGroup();
 
             Widgets.DrawMenuSection(rightRect);
@@ -887,7 +906,24 @@ namespace Kasterfly.SettingsBuilder
 
             if (selectedCategory != null && categoryItems.ContainsKey(selectedCategory))
             {
-                var items = categoryItems[selectedCategory];
+                Func<SettingItem, string> getId = si =>
+                {
+                    var idProp = si.GetType().GetField("Id") != null
+                        ? (string)si.GetType().GetField("Id").GetValue(si)
+                        : null;
+                    return string.IsNullOrEmpty(idProp) ? si.Key : idProp;
+                };
+                Func<SettingItem, bool> isFav = si => CombatTweaksMod.Settings.favorites.Contains(getId(si));
+
+                var itemsRaw = categoryItems[selectedCategory];
+                var items = itemsRaw
+                    .Select((si, index) => new { si, index })
+                    .OrderByDescending(x => isFav(x.si))
+                    .ThenBy(x => x.index)                    
+                    .Select(x => x.si)
+                    .ToList();
+
+
                 var visited = new HashSet<string>();
 
                 foreach (var item in items)
@@ -907,13 +943,62 @@ namespace Kasterfly.SettingsBuilder
                         }
                     }
 
-                    foreach (var subItem in group)
-                    {
+                    if (CombatTweaksMod.Settings.favorites == null)
+                        CombatTweaksMod.Settings.favorites = new HashSet<string>();
+                    List<string> groupIds = new List<string>();
+                    for (int gi = 0; gi < group.Count; gi++)
+                        groupIds.Add(getId(group[gi]));
+
+                    int subIndex = 0;
+                    foreach (var subItem in group) {
                         if (conditionals.TryGetValue(subItem.Key, out var cond) && !cond())
                             continue;
 
+                        const float starW = 40f;
                         Rect itemRect = new Rect(10f, curY, rightRect.width - 30f, subItem.Height);
-                        subItem.DrawFunc?.Invoke(itemRect);
+                        Rect starRect = new Rect(itemRect.x, itemRect.y, starW, itemRect.height);
+                        Rect contentRect = new Rect(itemRect.x + starW + 4f, itemRect.y, itemRect.width - starW - 4f,
+                            itemRect.height);
+
+                        bool isLabel = (subIndex == 0);
+
+                        bool groupFav = true;
+                        for (int gi = 0; gi < groupIds.Count; gi++)
+                        {
+                            if (!CombatTweaksMod.Settings.favorites.Contains(groupIds[gi]))
+                            {
+                                groupFav = false;
+                                break;
+                            }
+                        }
+
+                        var oldAnchor = Text.Anchor;
+                        var oldColor = GUI.color;
+
+                        if (isLabel)
+                        {
+                            Text.Anchor = TextAnchor.MiddleCenter;
+                            GUI.color = groupFav ? new Color(1f, 0.85f, 0.2f) : Color.white;
+
+                            if (Widgets.ButtonText(starRect, groupFav ? "★" : "☆", drawBackground: false))
+                            {
+                                if (groupFav)
+                                {
+                                    for (int gi = 0; gi < groupIds.Count; gi++)
+                                        CombatTweaksMod.Settings.favorites.Remove(groupIds[gi]);
+                                }
+                                else
+                                {
+                                    for (int gi = 0; gi < groupIds.Count; gi++)
+                                        CombatTweaksMod.Settings.favorites.Add(groupIds[gi]);
+                                }
+                            }
+                        }
+
+                        GUI.color = oldColor;
+                        Text.Anchor = oldAnchor;
+
+                        subItem.DrawFunc?.Invoke(contentRect);
                         curY += subItem.Height;
 
                         if (descriptions.TryGetValue(subItem.Key, out var desc) && CombatTweaksMod.Settings.showDetails)
@@ -924,14 +1009,29 @@ namespace Kasterfly.SettingsBuilder
                         }
 
                         curY += 10f;
+                        subIndex++;
                     }
+
                     Widgets.DrawLineHorizontal(10f, curY, rightRect.width - 30f);
                     curY += 10f;
                 }
+
             }
 
             Widgets.EndScrollView();
+
+            if (Mathf.Abs(CombatTweaksMod.Settings.lastArmorCap - CombatTweaksMod.Settings.maxArmorAmount) > 0.001f)
+            {
+                ArmorCapInitializer.ApplyArmorCapFromSettings();
+                CombatTweaksMod.Settings.lastArmorCap = CombatTweaksMod.Settings.maxArmorAmount;
+            }
+            else if (Mathf.Abs(CombatTweaksMod.Settings.lastRangeBuff - CombatTweaksMod.Settings.wepRange) > 0.001f)
+            {
+                VerbRangeMultiplierPatch.ApplyRangeBuffFromSettings();
+                CombatTweaksMod.Settings.lastRangeBuff = CombatTweaksMod.Settings.wepRange;
+            }
         }
+
 
         public Action<Rect> CreateCheckbox(Func<bool> getter, Action<bool> setter, string label)
         {
@@ -1861,24 +1961,23 @@ namespace Kasterfly.CombatTweaks.HarmonyPatches
         }
     }
 
-    [HarmonyPatch(typeof(StatWorker), nameof(StatWorker.FinalizeValue))]
-    public static class StatWorker_FinalizeArmorUncap
+    [StaticConstructorOnStartup]
+    public static class ArmorCapInitializer
     {
-        private static readonly FieldInfo statFieldInfo = typeof(StatWorker).GetField("stat", BindingFlags.NonPublic | BindingFlags.Instance);
-        private static readonly HashSet<StatDef> affectedStats = new HashSet<StatDef>
-    {
-        StatDefOf.ArmorRating_Sharp,
-        StatDefOf.ArmorRating_Blunt,
-        StatDefOf.ArmorRating_Heat
-    };
-   
-        static void Prefix(StatWorker __instance, StatRequest req, ref float val, bool applyPostProcess)
+        static ArmorCapInitializer()
+        {
+            ApplyArmorCapFromSettings();
+        }
+
+        public static void ApplyArmorCapFromSettings()
         {
             float settingValue = CombatTweaksMod.Settings.maxArmorAmount;
-            if (!applyPostProcess || statFieldInfo == null || Mathf.Abs(settingValue - 2f) < 0.001f) return;
-            StatDef stat = statFieldInfo.GetValue(__instance) as StatDef;
-            if (stat == null || !affectedStats.Contains(stat)) return;
-            stat.maxValue = settingValue > 20f ? float.PositiveInfinity : settingValue;
+            float cap = settingValue > 20f ? float.PositiveInfinity : settingValue;
+            StatDefOf.ArmorRating_Sharp.maxValue = cap;
+            StatDefOf.ArmorRating_Blunt.maxValue = cap;
+            StatDefOf.ArmorRating_Heat.maxValue  = cap;
+            if(CombatTweaksMod.Settings.debugLogging)
+                Log.Message($"[CombatTweaks] Updated armor cap to {Mathf.Round(cap*100)}%");
         }
     }
     
@@ -1888,27 +1987,45 @@ namespace Kasterfly.CombatTweaks.HarmonyPatches
     [StaticConstructorOnStartup]
     public static class VerbRangeMultiplierPatch
     {
+        private static float _lastMult = 1f;
+
         static VerbRangeMultiplierPatch()
         {
-            float multiplier = CombatTweaksMod.Settings.wepRange;
+            _lastMult = 1f;
+            ApplyRangeBuffFromSettings();
+        }
+        public static void ApplyRangeBuffFromSettings()
+        {
+            float m = CombatTweaksMod.Settings.wepRange;
+            if (Mathf.Approximately(m, _lastMult)) return;
+            if (Mathf.Approximately(_lastMult, 0f))
+            {
+                Log.Warning("[CombatTweaks] Last multiplier was 0; ratio scaling needs a baseline. Consider the zero-safe variant.");
+                _lastMult = 1f;
+            }
+
+            float ratio = (_lastMult == 0f) ? m : (m / _lastMult);
 
             foreach (ThingDef def in DefDatabase<ThingDef>.AllDefs)
             {
-                if (def.Verbs == null)
-                    continue;
+                var verbs = def.Verbs;
+                if (verbs == null) continue;
 
-                foreach (var verb in def.Verbs)
+                for (int i = 0; i < verbs.Count; i++)
                 {
-                    if (verb.IsMeleeAttack)
-                        continue;
-
-                    verb.range *= multiplier;
+                    var vp = verbs[i];
+                    if (vp == null || vp.IsMeleeAttack) continue;
+                    vp.range *= ratio;
                 }
             }
 
-            Log.Message($"[CombatTweaks] Multiplied ranged weapon ranges by {multiplier}");
+            _lastMult = m;
+            if(CombatTweaksMod.Settings.debugLogging)
+                Log.Message($"[CombatTweaks] Rescaled ranged weapon ranges by x{ratio:0.###} (now x{_lastMult:0.###} total)");
         }
     }
+
+
 
     [HarmonyPatch(typeof(VerbProperties), nameof(VerbProperties.DrawRadiusRing))]
     public static class VerbProperties_DrawRadiusRing_Patch
