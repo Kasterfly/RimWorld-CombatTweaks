@@ -1,4 +1,4 @@
-﻿using HarmonyLib;
+using HarmonyLib;
 using Kasterfly.CombatTweaks;
 using Kasterfly.CombatTweaks.Comps;
 using Kasterfly.CombatTweaks.MainFunctions;
@@ -83,7 +83,7 @@ namespace Kasterfly.CombatTweaks
 
             InitSettings();
             YayoUnpatcher.DoYayoUnpatch();
-            Log.Message("[CombatTweaks] CombatTweaks (v1.1.11) for RimWorld 1.6");
+            Log.Message("[CombatTweaks] CombatTweaks (v1.1.12) for RimWorld 1.6");
         }
 
         public override string SettingsCategory() => "Combat Tweaks";
@@ -134,7 +134,6 @@ namespace Kasterfly.CombatTweaks
                 new List<string> { "yayoCombatCompatEnableYayoAAA" });
             settingsGui.AddConditional("yayoArmorSlider", () => Settings.yayoCombatCompatEnableYayoAAA);
 
-            // Features
             settingsGui.AddCategory("Features");
             settingsGui.AddItem("allArmorEffectsEverywhere", "allArmorEffectsEverywhere", "Features",
                 settingsGui.CreateCheckbox(() => Settings.allArmorEffectsEverywhere, v => Settings.allArmorEffectsEverywhere = v, "All Equipped Armor Protects All Body Parts"));
@@ -1376,9 +1375,20 @@ namespace Kasterfly.CombatTweaks.MainFunctions
                 {
                     if (settings.durabilityEffectsArmorDoTattered && maxHP / 2 >= currentHP)
                         DEM *= 3;
-                    armorRating *= Mathf.Clamp01(1f - ((1f - (currentHP / maxHP)) * DEM));
-                    if (settings.debugLogging)
-                        Log.Message($"[CombatTweaks] Modified Stats (Durability Effects Armor) - Info: [Armor Rating: {armorRating}], Item health ratio: {currentHP / maxHP}");
+                    if (currentHP / maxHP >= 0)
+                    {
+                        if (settings.debugLogging)
+                            Log.Message($"[CombatTweaks] Modified Stats (Durability Effects Armor) - Info: [Armor Rating: {armorRating}], Item health ratio: {currentHP / maxHP}");
+
+                        armorRating *= Mathf.Clamp01(1f - ((1f - (currentHP / maxHP)) * DEM));
+                    }
+                    else
+                    {
+                        if (settings.debugLogging)
+                            Log.Message($"[CombatTweaks] Modified Stats (Durability Effects Armor) - Info: Skipped because durability does not exist");
+
+                    }
+
                 }
             }
 
