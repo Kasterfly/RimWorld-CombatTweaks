@@ -82,7 +82,7 @@ namespace Kasterfly.CombatTweaks
 
             InitSettings();
             YayoUnpatcher.DoYayoUnpatch();
-            Log.Message("[CombatTweaks] CombatTweaks (v1.1.13) for RimWorld 1.6");
+            Log.Message("[CombatTweaks] CombatTweaks (v1.1.13.1) for RimWorld 1.6");
         }
 
         public override string SettingsCategory() => "Combat Tweaks";
@@ -410,7 +410,7 @@ namespace Kasterfly.CombatTweaks
             settingsGui.AddDescription("armorPenImportance", "Scales how much armor penetration reduces armor effectiveness.");
             settingsGui.AddDescription("armorStr", "A flat multiplier applied to armor to increase its strength.");
             settingsGui.AddDescription("wepRange", "A flat multiplier applied to the distance ranged weapons can shoot. This will only apply the effect after you restart your game. If the range exceeds 63 vanilla rimworld stops making the \"range circle thingy\". So, i made a custom one to show up after that point but it doesn't look quite the same as vanilla.");
-            settingsGui.AddDescription("bulletSpread", "This changes the spread of projectiles that miss a target. It's set as a percentage of 180 degrees, so for example: 20% = 36 degrees or 200% = 360 degrees. If you set this to 0% it will just use the normal vanilla calculations.");
+            settingsGui.AddDescription("bulletSpread", "This changes the spread of projectiles that miss a target. It's set as a percentage of 90 degrees, so for example: 20% = 18 degrees or 200% = 180 degrees. If you set this to 0% it will just use the normal vanilla calculations.");
             settingsGui.AddDescription("skillsEffectBulletSpread", "Depending on the skill of the shooter it will apply a multiplier between 3 (at shooting level 0) and 0.33 (at shooting level 19+) to the spread amount set above.");
             settingsGui.AddDescription("deflectionChanceMultiplier", "Increases the chance for armor to deflect damage.");
             settingsGui.AddDescription("reductionChanceMultiplier", "Increases the chance for armor to reduce damage if it didn't deflect.");
@@ -2131,9 +2131,10 @@ namespace Kasterfly.CombatTweaks.HarmonyPatches
                 return;
             }
 
-            float maxAngle = Mathf.Min(baseSpread * 180f, 360f);
+            float maxAngle = Mathf.Min(baseSpread * 90f, 180f);
             if (CombatTweaksMod.Settings.skillsEffectBulletSpread && launcher is Pawn pawn2 && pawn2.skills != null)
                 maxAngle = Mathf.Max(maxAngle / 3, maxAngle * (3 - pawn2.skills.GetSkill(SkillDefOf.Shooting).Level / 7));
+            maxAngle = Mathf.Min(maxAngle, 180f);
 
             Vector3 originPos = launcher.Position.ToVector3Shifted();
             Vector3 targetPos = intendedTarget.HasThing
@@ -2143,8 +2144,21 @@ namespace Kasterfly.CombatTweaks.HarmonyPatches
             float distance = Vector3.Distance(originPos, targetPos) * 1.1f;
             Vector3 direction = (targetPos - originPos).normalized;
 
-            float deviationAngle = Rand.Range(-maxAngle * 0.5f, maxAngle * 0.5f);
-            Vector3 finalDir = Quaternion.AngleAxis(deviationAngle, Vector3.up) * direction;
+            float deviationAngle = Rand.Range(maxAngle * (-0.5f), maxAngle * 0.5f);
+
+            //Old angle calculation
+            //Vector3 finalDir = Quaternion.AngleAxis(deviationAngle, Vector3.up) * direction;
+
+            //New angle calculation (currently testing to see if it's better)
+            float angleRad = deviationAngle * Mathf.Deg2Rad;
+            float cos = Mathf.Cos(angleRad);
+            float sin = Mathf.Sin(angleRad);
+            Vector3 finalDir = new Vector3(
+                direction.x * cos - direction.z * sin,
+                direction.y,
+                direction.x * sin + direction.z * cos
+            );
+
 
             usedTarget = new LocalTargetInfo((originPos + finalDir * distance).ToIntVec3());
 
@@ -2152,8 +2166,8 @@ namespace Kasterfly.CombatTweaks.HarmonyPatches
             {
                 Log.Message(
                     $"[CombatTweaks] Forced MISS via spread logic\n" +
-                    $"- AimChance: {report.AimOnTargetChance:P1} | Deviation: {deviationAngle:F2}°\n" +
-                    $"- Final Target Cell: {usedTarget.Cell}"
+                    $"- AimChance: {report.AimOnTargetChance:P1} | Deviation: {deviationAngle:F2}°" +
+                    $"- | Final Target Cell: {usedTarget.Cell} | Max Angle: {maxAngle/2:F2}° | finalDir: {finalDir.ToString()}"
                 );
             }
         }
