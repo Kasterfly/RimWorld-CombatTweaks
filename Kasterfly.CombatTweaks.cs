@@ -82,7 +82,7 @@ namespace Kasterfly.CombatTweaks
 
             InitSettings();
             YayoUnpatcher.DoYayoUnpatch();
-            Log.Message("[CombatTweaks] CombatTweaks (v1.1.14) for RimWorld 1.6");
+            Log.Message("[CombatTweaks] CombatTweaks (v1.1.15) for RimWorld 1.6");
         }
 
         public override string SettingsCategory() => "Combat Tweaks";
@@ -287,6 +287,9 @@ namespace Kasterfly.CombatTweaks
             settingsGui.AddItem("bulletSpread", "bulletSpread", "Tweaks",
                 settingsGui.CreateSlider(() => Settings.bulletSpread, v => Settings.bulletSpread = v, 0f, 2f, () => $"Projectile Spread Amount: {(Settings.bulletSpread * 100):F0}%", 0.01f),
                 60f);
+            settingsGui.AddItem("burstSizeMultiplier", "burstSizeMultiplier", "Tweaks",
+                settingsGui.CreateSlider(() => Settings.burstSizeMultiplier, v => Settings.burstSizeMultiplier = v, 0.1f, 8f, () => $"Burst Size (*Requires Reloading Current Save*): {(formatBuff(Settings.burstSizeMultiplier))}", 0.1f),
+                60f);
             settingsGui.AddItem("skillsEffectBulletSpread", "skillsEffectBulletSpread", "Tweaks",
                 settingsGui.CreateCheckbox(() => Settings.skillsEffectBulletSpread, v => Settings.skillsEffectBulletSpread = v, "Scale with skill level"),
                 55f,
@@ -411,6 +414,7 @@ namespace Kasterfly.CombatTweaks
             settingsGui.AddDescription("armorStr", "A flat multiplier applied to armor to increase its strength.");
             settingsGui.AddDescription("wepRange", "A flat multiplier applied to the distance ranged weapons can shoot. This will only apply the effect after you restart your game. If the range exceeds 63 vanilla rimworld stops making the \"range circle thingy\". So, i made a custom one to show up after that point but it doesn't look quite the same as vanilla.");
             settingsGui.AddDescription("bulletSpread", "This changes the spread of projectiles that miss a target. It's set as a percentage of 90 degrees, so for example: 20% = 18 degrees or 200% = 180 degrees. If you set this to 0% it will just use the normal vanilla calculations.");
+            settingsGui.AddDescription("burstSizeMultiplier", "This changes the burst size of weapons that shoot in bursts. It will round to the nearest whole number. \nWARNING: This will not apply mid game, you will need to exit to the main menu then reload a save for it to apply. (It will effect the visual 'Burst shot count' mid game, but will not actually update current existing weapons unless you reload the save)");
             settingsGui.AddDescription("skillsEffectBulletSpread", "Depending on the skill of the shooter it will apply a multiplier between 3 (at shooting level 0) and 0.33 (at shooting level 19+) to the spread amount set above.");
             settingsGui.AddDescription("deflectionChanceMultiplier", "Increases the chance for armor to deflect damage.");
             settingsGui.AddDescription("reductionChanceMultiplier", "Increases the chance for armor to reduce damage if it didn't deflect.");
@@ -539,6 +543,8 @@ namespace Kasterfly.CombatTweaks
         public float rangedDamageBoost = 1.0f;
         public float durabilityTypeInteractionMultiplier = 1.5f;
         public float armorDeflectionReworkThreshold = 0.5f;
+        public float burstSizeMultiplier = 1.0f;
+        public float lastBurstSizeMultiplier = 1.0f;
 
 
 
@@ -598,6 +604,8 @@ namespace Kasterfly.CombatTweaks
             Scribe_Values.Look(ref adrenalineChance, "adrenalineChance", 0.1f);
             Scribe_Values.Look(ref durabilityEffectsArmorMult, "durabilityEffectsArmorMult", 0.004f);
             Scribe_Values.Look(ref thickArmorEffectivenessLoss, "thickArmorEffectivenessLoss", 0.5f);
+            Scribe_Values.Look(ref burstSizeMultiplier, "burstSizeMultiplier", 1.0f);
+            Scribe_Values.Look(ref lastBurstSizeMultiplier, "lastBurstSizeMultiplier", 1.0f);
             Scribe_Collections.Look(ref favorites, "favorites", LookMode.Value);
 
             if (favorites == null)
@@ -662,6 +670,7 @@ namespace Kasterfly.CombatTweaks
             rangedDamageBoost = 1.0f;
             durabilityEffectsArmorMult = 0.004f;
             thickArmorEffectivenessLoss = 0.5f;
+            burstSizeMultiplier = 1.0f;
         }
 
         public void ResetToVanilla()
@@ -711,7 +720,7 @@ namespace Kasterfly.CombatTweaks
             meleeDamageBoost = 1.0f;
             rangedDamageBoost = 1.0f;
             thickArmorEffectivenessLoss = 0.5f;
-
+            burstSizeMultiplier = 1.0f;
         }
 
         public void ResetToYayo()
@@ -767,6 +776,7 @@ namespace Kasterfly.CombatTweaks
             meleeDamageBoost = RoundTo(Rand.Range(0f, 2f), 0.05f);
             rangedDamageBoost = RoundTo(Rand.Range(0f, 2f), 0.05f);
             reductionAmountMultiplier = RoundTo(Rand.Range(0.01f, 1f), 0.01f);
+            burstSizeMultiplier = RoundTo(Rand.Range(0.1f, 8f), 0.1f);
 
             if (finalArmorCalculations == FinalArmorCalculations.Vanilla)
             {
@@ -1025,10 +1035,15 @@ namespace Kasterfly.SettingsBuilder
                 ArmorCapInitializer.ApplyArmorCapFromSettings();
                 CombatTweaksMod.Settings.lastArmorCap = CombatTweaksMod.Settings.maxArmorAmount;
             }
-            else if (Mathf.Abs(CombatTweaksMod.Settings.lastRangeBuff - CombatTweaksMod.Settings.wepRange) > 0.001f)
+            if (Mathf.Abs(CombatTweaksMod.Settings.lastRangeBuff - CombatTweaksMod.Settings.wepRange) > 0.001f)
             {
                 VerbRangeMultiplierPatch.ApplyRangeBuffFromSettings();
                 CombatTweaksMod.Settings.lastRangeBuff = CombatTweaksMod.Settings.wepRange;
+            }
+            if (Mathf.Abs(CombatTweaksMod.Settings.lastBurstSizeMultiplier - CombatTweaksMod.Settings.burstSizeMultiplier) > 0.001f)
+            {
+                VerbBurstMultiplierPatch.ApplyBurstBuffFromSettings();
+                CombatTweaksMod.Settings.lastBurstSizeMultiplier = CombatTweaksMod.Settings.burstSizeMultiplier;
             }
         }
 
@@ -1981,6 +1996,96 @@ namespace Kasterfly.CombatTweaks.HarmonyPatches
         }
     }
     
+
+    [StaticConstructorOnStartup]
+    public static class VerbBurstMultiplierPatch
+    {
+        private static float _lastMult = 1f;
+
+        private static readonly Dictionary<string, int> _baselineBurstByKey = new Dictionary<string, int>(1024);
+        private static bool _baselinesInitialized = false;
+
+        static VerbBurstMultiplierPatch()
+        {
+            _lastMult = 1f;
+            ApplyBurstBuffFromSettings();
+        }
+
+        public static void ApplyBurstBuffFromSettings()
+        {
+            float m = Mathf.Clamp(CombatTweaksMod.Settings.burstSizeMultiplier, 0.01f, 8f);
+
+            if (!_baselinesInitialized)
+            {
+                InitializeBaselines();
+                _baselinesInitialized = true;
+            }
+
+            if (Mathf.Approximately(m, _lastMult))
+                return;
+
+            foreach (ThingDef def in DefDatabase<ThingDef>.AllDefs)
+            {
+                var verbs = def.Verbs;
+                if (verbs == null) continue;
+
+                for (int i = 0; i < verbs.Count; i++)
+                {
+                    var vp = verbs[i];
+                    if (vp == null || vp.IsMeleeAttack) continue;
+                    if (vp.verbClass != typeof(Verb_Shoot)) continue;
+                    if (vp.defaultProjectile == null) continue;
+
+                    string key = MakeKey(def, i);
+
+                    if (!_baselineBurstByKey.TryGetValue(key, out int baseline))
+                    {
+                        int estimatedBase = Mathf.Max(1, Mathf.RoundToInt(vp.burstShotCount / Mathf.Max(0.01f, _lastMult)));
+                        _baselineBurstByKey[key] = baseline = estimatedBase;
+                    }
+
+                    int newValue = Mathf.Max(1, Mathf.RoundToInt(baseline * m));
+                    vp.burstShotCount = newValue;
+                }
+            }
+
+            if (CombatTweaksMod.Settings.debugLogging)
+                Log.Message($"[CombatTweaks] Burst sizes set to baseline × {m:0.###} (was × {_lastMult:0.###}).");
+
+            _lastMult = m;
+        }
+
+        private static void InitializeBaselines()
+        {
+            foreach (ThingDef def in DefDatabase<ThingDef>.AllDefs)
+            {
+                var verbs = def.Verbs;
+                if (verbs == null) continue;
+
+                for (int i = 0; i < verbs.Count; i++)
+                {
+                    var vp = verbs[i];
+                    if (vp == null || vp.IsMeleeAttack) continue;
+                    if (vp.verbClass != typeof(Verb_Shoot)) continue;
+                    if (vp.defaultProjectile == null) continue;
+
+                    string key = MakeKey(def, i);
+
+                    int original = vp.burstShotCount;
+                    if (original <= 0) original = 1;
+                    _baselineBurstByKey[key] = original;
+                }
+            }
+
+            if (CombatTweaksMod.Settings.debugLogging)
+                Log.Message($"[CombatTweaks] Cached {_baselineBurstByKey.Count} burst baselines.");
+        }
+
+        private static string MakeKey(ThingDef def, int verbIndex)
+        {
+            return $"{def.defName}#{verbIndex}";
+        }
+    }
 
 
 
