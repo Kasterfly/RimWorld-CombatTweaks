@@ -82,7 +82,7 @@ namespace Kasterfly.CombatTweaks
 
             InitSettings();
             YayoUnpatcher.DoYayoUnpatch();
-            Log.Message("[CombatTweaks] CombatTweaks (v1.1.13.1) for RimWorld 1.6");
+            Log.Message("[CombatTweaks] CombatTweaks (v1.1.14) for RimWorld 1.6");
         }
 
         public override string SettingsCategory() => "Combat Tweaks";
@@ -2136,38 +2136,40 @@ namespace Kasterfly.CombatTweaks.HarmonyPatches
                 maxAngle = Mathf.Max(maxAngle / 3, maxAngle * (3 - pawn2.skills.GetSkill(SkillDefOf.Shooting).Level / 7));
             maxAngle = Mathf.Min(maxAngle, 180f);
 
-            Vector3 originPos = launcher.Position.ToVector3Shifted();
+            Vector3 originPos = origin;
             Vector3 targetPos = intendedTarget.HasThing
                 ? intendedTarget.Thing.Position.ToVector3Shifted()
                 : intendedTarget.Cell.ToVector3Shifted();
 
-            float distance = Vector3.Distance(originPos, targetPos) * 1.1f;
-            Vector3 direction = (targetPos - originPos).normalized;
+            float distance = Vector3.Distance(originPos, targetPos);
+            Vector3 forward = (targetPos - originPos).normalized;
+            if (forward.sqrMagnitude < 1e-6f)
+                return;
+            Vector3 right = new Vector3(-forward.z, 0f, forward.x);
 
             float deviationAngle = Rand.Range(maxAngle * (-0.5f), maxAngle * 0.5f);
 
             float angleRad = deviationAngle * Mathf.Deg2Rad;
-            float cos = Mathf.Cos(angleRad);
-            float sin = Mathf.Sin(angleRad);
-            Vector3 finalDir = new Vector3(
-                direction.x * cos - direction.z * sin,
-                direction.y,
-                direction.x * sin + direction.z * cos
-            );
+            float lateral = Mathf.Tan(Mathf.Abs(angleRad)) * distance;
+            lateral = Mathf.Min(lateral, distance * 0.75f);
+            lateral *= Mathf.Sign(deviationAngle);
 
-            if (float.IsNaN(finalDir.x) || float.IsNaN(finalDir.y) || float.IsNaN(finalDir.z) ||
-                float.IsInfinity(finalDir.x) || float.IsInfinity(finalDir.y) || float.IsInfinity(finalDir.z) || float.IsNaN(distance))
+            Vector3 missPoint = targetPos + right * lateral;
+            missPoint += forward * Rand.Range(-1f, 1f);
+
+            if (float.IsNaN(missPoint.x) || float.IsNaN(missPoint.y) || float.IsNaN(missPoint.z) ||
+                float.IsInfinity(missPoint.x) || float.IsInfinity(missPoint.y) || float.IsInfinity(missPoint.z) || float.IsNaN(distance))
                 return;
 
-            usedTarget = new LocalTargetInfo((originPos + finalDir * distance).ToIntVec3());
+            usedTarget = new LocalTargetInfo(missPoint.ToIntVec3());
 
             if (CombatTweaksMod.Settings.debugLogging)
             {
                 Log.Message(
                     $"[CombatTweaks] Forced MISS via spread logic\n" +
                     $"- AimChance: {report.AimOnTargetChance:P1} | Deviation: {deviationAngle:F2}°" +
-                    $"- | Final Target Cell: {usedTarget.Cell} | Max Angle: {maxAngle/2:F2}° | finalDir: {finalDir.ToString()}"
-                );
+                    $"- | Final Target Cell: {usedTarget.Cell} | Max Angle: {maxAngle/2:F2}° | missPoint: {missPoint.ToString()}"
+                 );
             }
         }
     }
