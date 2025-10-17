@@ -2146,10 +2146,6 @@ namespace Kasterfly.CombatTweaks.HarmonyPatches
 
             float deviationAngle = Rand.Range(maxAngle * (-0.5f), maxAngle * 0.5f);
 
-            //Old angle calculation
-            //Vector3 finalDir = Quaternion.AngleAxis(deviationAngle, Vector3.up) * direction;
-
-            //New angle calculation (currently testing to see if it's better)
             float angleRad = deviationAngle * Mathf.Deg2Rad;
             float cos = Mathf.Cos(angleRad);
             float sin = Mathf.Sin(angleRad);
@@ -2159,6 +2155,9 @@ namespace Kasterfly.CombatTweaks.HarmonyPatches
                 direction.x * sin + direction.z * cos
             );
 
+            if (float.IsNaN(finalDir.x) || float.IsNaN(finalDir.y) || float.IsNaN(finalDir.z) ||
+                float.IsInfinity(finalDir.x) || float.IsInfinity(finalDir.y) || float.IsInfinity(finalDir.z) || float.IsNaN(distance))
+                return;
 
             usedTarget = new LocalTargetInfo((originPos + finalDir * distance).ToIntVec3());
 
