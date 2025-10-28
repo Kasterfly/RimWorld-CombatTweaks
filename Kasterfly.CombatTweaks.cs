@@ -82,7 +82,7 @@ namespace Kasterfly.CombatTweaks
 
             InitSettings();
             YayoUnpatcher.DoYayoUnpatch();
-            Log.Message("[CombatTweaks] CombatTweaks (v1.1.15) for RimWorld 1.6");
+            Log.Message("[CombatTweaks] CombatTweaks (v1.1.16) for RimWorld 1.6");
         }
 
         public override string SettingsCategory() => "Combat Tweaks";
@@ -1182,12 +1182,12 @@ namespace Kasterfly.CombatTweaks.MainFunctions
             float armorMult = settings.armorStr;
             float armorAdd = 0f;
 
-            TechLevel targetTech = TechLevel.Undefined;
+            TechLevel targetBodyTech = TechLevel.Undefined;
             TechLevel attackTech = dinfo.Weapon?.techLevel ?? TechLevel.Industrial;
 
             if (race.IsMechanoid)
             {
-                targetTech = TechLevel.Ultra;
+                targetBodyTech = TechLevel.Ultra;
                 armorAdd += (settings.mechanoidBuff-1f) / 10f;
                 armorMult *= settings.mechanoidBuff;
             }
@@ -1212,7 +1212,7 @@ namespace Kasterfly.CombatTweaks.MainFunctions
 
             float originalDamage = damAmount;
             int result = 0, highestResult = 0;
-
+            TechLevel targetTech = TechLevel.Undefined;
             if (pawn.apparel != null)
             {
                 var apparelList = pawn.apparel.WornApparel;
@@ -1226,11 +1226,7 @@ namespace Kasterfly.CombatTweaks.MainFunctions
                             layers = 1;
                         if (settings.debugLogging && settings.thickArmor)
                             Log.Message($"[CombatTweaks] Armor Layers: {layers}");
-                        
-                        if (targetTech == TechLevel.Undefined)
-                            targetTech = armor.def.techLevel;
-
-                        
+                        targetTech = armor.def.techLevel;
                         float before = damAmount;
                         float rating = armor.GetStatValue(armorRatingStat, true) * armorMult + armorAdd;
                         bool deflected2 = false;
@@ -1242,6 +1238,7 @@ namespace Kasterfly.CombatTweaks.MainFunctions
                             deflected2 = deflected2 || deflected;
                             metalArmor2 = metalArmor2 || metalArmor;
                             rating *= settings.thickArmorEffectivenessLoss;
+                            targetTech = TechLevel.Undefined;
 
                         }
                         if (CombatTweaksMod.Settings.doTracking)
@@ -1282,7 +1279,7 @@ namespace Kasterfly.CombatTweaks.MainFunctions
             {
                 float rating = pawn.GetStatValue(armorRatingStat, true) * armorMult + armorAdd;
                 damAmount = ApplyArmor(ref damAmount, ref armorPenetration, rating, null, ref damageDef, pawn,
-                    out bool metalArmor, out bool deflected, settings, dinfo, ref result, targetTech, attackTech);
+                    out bool metalArmor, out bool deflected, settings, dinfo, ref result, targetBodyTech, attackTech);
 
                 if (result > highestResult)
                     highestResult = result;
