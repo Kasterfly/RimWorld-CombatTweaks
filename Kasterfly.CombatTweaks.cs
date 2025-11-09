@@ -16,53 +16,6 @@ using static Kasterfly.CombatTweaks.CombatTweaksModSettings;
 
 namespace Kasterfly.CombatTweaks
 {
-    [StaticConstructorOnStartup]
-    public static class YayoUnpatcher
-    {
-        static YayoUnpatcher()
-        {
-
-            new Harmony("kasterfly.combattweaks").Patch(
-                original: AccessTools.Method(typeof(Game), nameof(Game.FinalizeInit)),
-                postfix: new HarmonyMethod(typeof(YayoUnpatcher), nameof(DoYayoUnpatch))
-            );
-        }
-
-        public static void DoYayoUnpatch()
-        {
-            var harmony = new Harmony("kasterfly.combattweaks.unpatcher");
-            MethodInfo target = AccessTools.Method(typeof(DamageWorker_AddInjury), "ApplyDamageToPart");
-
-            var patchInfo = Harmony.GetPatchInfo(target);
-            if (patchInfo == null) return;
-
-            bool unpatched = false;
-
-            foreach (var prefix in patchInfo.Prefixes.Where(p => p.owner.ToLowerInvariant().Contains("yayoscombat")))
-            {
-                harmony.Unpatch(target, HarmonyPatchType.Prefix, prefix.owner);
-                unpatched = true;
-            }
-
-            foreach (var transpiler in patchInfo.Transpilers.Where(p => p.owner.ToLowerInvariant().Contains("yayoscombat")))
-            {
-                harmony.Unpatch(target, HarmonyPatchType.Transpiler, transpiler.owner);
-                unpatched = true;
-            }
-
-            if (unpatched)
-            {
-                CombatTweaksMod.Settings.yayoCombatCompat = true;
-                Log.Message("[CombatTweaks] Yayo's Combat 3 patch found and unpatched successfully.");
-            }
-            else
-            {
-                Log.Message("[CombatTweaks] Yayo's Combat 3 patch not found or already removed.");
-            }
-        }
-
-    }
-
     public class CombatTweaksMod : Mod
     {
         public static CombatTweaksModSettings Settings;
@@ -81,8 +34,8 @@ namespace Kasterfly.CombatTweaks
                 Settings.yayoCombatCompat = false;
 
             InitSettings();
-            YayoUnpatcher.DoYayoUnpatch();
-            Log.Message("[CombatTweaks] CombatTweaks (v1.1.16) for RimWorld 1.6");
+            YayoCombat3Compat.DoYayoUnpatch();
+            Log.Message("[CombatTweaks] CombatTweaks (v1.2.0) for RimWorld 1.5");
         }
 
         public override string SettingsCategory() => "Combat Tweaks";
@@ -132,6 +85,25 @@ namespace Kasterfly.CombatTweaks
                 60f,
                 new List<string> { "yayoCombatCompatEnableYayoAAA" });
             settingsGui.AddConditional("yayoArmorSlider", () => Settings.yayoCombatCompatEnableYayoAAA);
+
+            settingsGui.AddItem(
+                "vanillaCombatReloadedCompatibility",
+                "vanillaCombatReloadedCompatibility",
+                "Compatibility",
+                settingsGui.CreateCheckbox(
+                    () => Settings.vanillaCombatReloadedCompatibility,
+                    val =>
+                    {
+                        if (Settings.vanillaCombatReloadedCompatibility != val)
+                        {
+                            Settings.vanillaCombatReloadedCompatibility = val;
+                            VanillaCombatReloadedCompat.RefreshIfNeeded();
+                        }
+                    },
+                    "Enable Vanilla Combat Reloaded's \"Advanced Armor Behavior\" Compatibility"
+                ),
+                35f
+            );
 
             settingsGui.AddCategory("Features");
             settingsGui.AddItem("allArmorEffectsEverywhere", "allArmorEffectsEverywhere", "Features",
@@ -379,6 +351,9 @@ namespace Kasterfly.CombatTweaks
 
             settingsGui.AddDescription("yayoCombatCompatEnableYayoAAA", "Enables patching for Yayo's 'Advanced Armor Algorithms' system.\nYou do not need to have Yayo's Combat 3 in your modlist to use this.");
             settingsGui.AddDescription("yayoCombatCompat_s_armorEf", "Multiplier that overrides armor effectiveness when Yayo compatibility is enabled.");
+            settingsGui.AddDescription("vanillaCombatReloadedCompatibility",
+                "Enables compatibility with Vanilla Combat Reloaded's 'Advanced Armor Behavior'. If you change the values for the Advanced Armor Behavior in Vanilla Combat Reloaded, disable this setting, then re-enable it for it to update with the new values.");
+
 
             settingsGui.AddDescription("allArmorEffectsEverywhere", "This will simplify armor even more, if you want that. I would recommend weakening armor if you enable this since every single piece of armor is used to protect the wearer.");
             settingsGui.AddDescription("notArmor", "This will ignore armor if the armor % is under a certain threshold. If you disable durability loss too it, it can prevent your colonist from losing all their clothes when the durability loss settings are boosted.");
@@ -494,6 +469,7 @@ namespace Kasterfly.CombatTweaks
         public SharpConversionMode sharpConversionMode = SharpConversionMode.ArmorThreshold;
         public FinalArmorCalculations finalArmorCalculations = FinalArmorCalculations.Custom;
         public bool yayoCombatCompat = false;
+        public bool vanillaCombatReloadedCompatibility = false;
         public bool reliableArmors = false;
         public bool doTracking = false;
         public bool debugLogging = false;
@@ -1238,7 +1214,6 @@ namespace Kasterfly.CombatTweaks.MainFunctions
                             deflected2 = deflected2 || deflected;
                             metalArmor2 = metalArmor2 || metalArmor;
                             rating *= settings.thickArmorEffectivenessLoss;
-                            targetTech = TechLevel.Undefined;
 
                         }
                         if (CombatTweaksMod.Settings.doTracking)
@@ -1372,7 +1347,19 @@ namespace Kasterfly.CombatTweaks.MainFunctions
         {
             metalArmor = false || pawn.RaceProps.IsMechanoid;
             forcedDefl = false;
+            float armorPenetration = armorPenetrationValue;
 
+
+            if (settings.vanillaCombatReloadedCompatibility && VanillaCombatReloadedCompat.AArmor)
+            {
+                if (settings.debugLogging)
+                {
+                    Log.Message($"[CombatTweaks] -- VanillaCombatReloadedCompat effects: armor rating {armorRating} -> {armorRating * VanillaCombatReloadedCompat.AArmorScale} | armor penetration {armorPenetration} -> {armorPenetration * VanillaCombatReloadedCompat.AArmorScale}");
+
+                }
+                armorRating *= VanillaCombatReloadedCompat.AArmorScale;
+                armorPenetration *= VanillaCombatReloadedCompat.AArmorScale;
+            }
 
             if (settings.notArmor && armorRating < settings.notArmorThreshold && !settings.notArmorStillTakeDamage)
             {
@@ -1386,7 +1373,6 @@ namespace Kasterfly.CombatTweaks.MainFunctions
             int techLevelDiff = (int)targetTechLevel - (int)damageTechLevel;
             float techLevelMultiplier = (techLevelDiff * settings.techLevelBoost);
             bool flag = false;
-            float armorPenetration = armorPenetrationValue;
             float yayoArmorPenetration = armorPenetration;
             float startDamage = damAmount;
 
@@ -1992,7 +1978,98 @@ namespace Kasterfly.CombatTweaks.HarmonyPatches
                 Log.Message($"[CombatTweaks] Updated armor cap to {Mathf.Round(cap*100)}%");
         }
     }
-    
+
+
+    [StaticConstructorOnStartup]
+    public static class YayoCombat3Compat
+    {
+        static YayoCombat3Compat()
+        {
+
+            new Harmony("kasterfly.combattweaks").Patch(
+                original: AccessTools.Method(typeof(Game), nameof(Game.FinalizeInit)),
+                postfix: new HarmonyMethod(typeof(YayoCombat3Compat), nameof(DoYayoUnpatch))
+            );
+        }
+
+        public static void DoYayoUnpatch()
+        {
+            var harmony = new Harmony("kasterfly.combattweaks.unpatcher");
+            MethodInfo target = AccessTools.Method(typeof(DamageWorker_AddInjury), "ApplyDamageToPart");
+
+            var patchInfo = Harmony.GetPatchInfo(target);
+            if (patchInfo == null) return;
+
+            bool unpatched = false;
+
+            foreach (var prefix in patchInfo.Prefixes.Where(p => p.owner.ToLowerInvariant().Contains("yayoscombat")))
+            {
+                harmony.Unpatch(target, HarmonyPatchType.Prefix, prefix.owner);
+                unpatched = true;
+            }
+
+            foreach (var transpiler in patchInfo.Transpilers.Where(p => p.owner.ToLowerInvariant().Contains("yayoscombat")))
+            {
+                harmony.Unpatch(target, HarmonyPatchType.Transpiler, transpiler.owner);
+                unpatched = true;
+            }
+
+            if (unpatched)
+            {
+                CombatTweaksMod.Settings.yayoCombatCompat = true;
+                Log.Message("[CombatTweaks] Yayo's Combat 3 patch found and unpatched successfully.");
+            }
+            else
+            {
+                if (Current.ProgramState == ProgramState.Playing)
+                    Log.Message("[CombatTweaks] Yayo's Combat 3 patch not found or already removed.");
+            }
+        }
+
+    }
+
+    [StaticConstructorOnStartup]
+    public static class VanillaCombatReloadedCompat
+    {
+        public static bool present = false;
+        public static bool AArmor = false;
+        public static float AArmorScale = 1f;
+
+        static VanillaCombatReloadedCompat()
+        {
+            var t = AccessTools.TypeByName("VCR.ArmorUtility_ApplyArmor_Patch");
+            present = t != null;
+            if (!present) return;
+            try
+            {
+                var fEnable = AccessTools.Field(t, "AArmor");
+                var fScale  = AccessTools.Field(t, "AArmorScale");
+                if (fEnable != null) AArmor = (bool) (fEnable.GetValue(null) ?? false);
+                if (fScale  != null) AArmorScale = (float)(fScale.GetValue(null) ?? 1f);
+                if (CombatTweaksMod.Settings.debugLogging)
+                    Log.Message($"[CombatTweaks] Vanilla Combat Reloaded Detected: AArmor: {AArmor}, AArmorScale: {AArmorScale}");
+            }
+            catch { }
+
+        }
+
+        public static void RefreshIfNeeded()
+        {
+            if (!present) return;
+            var t = AccessTools.TypeByName("VCR.ArmorUtility_ApplyArmor_Patch");
+            if (t == null) { present = false; return; }
+            try
+            {
+                var fEnable = AccessTools.Field(t, "AArmor");
+                var fScale  = AccessTools.Field(t, "AArmorScale");
+                if (fEnable != null) AArmor = (bool)(fEnable.GetValue(null) ?? false);
+                if (fScale  != null) AArmorScale = (float)(fScale.GetValue(null) ?? 1f);
+                if (CombatTweaksMod.Settings.debugLogging)
+                    Log.Message($"[CombatTweaks] Refreshed Vanilla Combat Reloaded Values: AArmor: {AArmor}, AArmorScale: {AArmorScale}");
+            }
+            catch { }
+        }
+    }
 
     [StaticConstructorOnStartup]
     public static class VerbBurstMultiplierPatch
@@ -2199,9 +2276,6 @@ namespace Kasterfly.CombatTweaks.HarmonyPatches
 
 
 
-
-
-
     [HarmonyPatch(typeof(Projectile), "Launch", new Type[] {
     typeof(Thing), typeof(Vector3), typeof(LocalTargetInfo), typeof(LocalTargetInfo),
     typeof(ProjectileHitFlags), typeof(bool), typeof(Thing), typeof(ThingDef)
@@ -2275,11 +2349,5 @@ namespace Kasterfly.CombatTweaks.HarmonyPatches
             }
         }
     }
-
-
-
-
-
-
 }
 
