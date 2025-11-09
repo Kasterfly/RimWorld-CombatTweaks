@@ -532,6 +532,7 @@ namespace Kasterfly.CombatTweaks
             Scribe_Values.Look(ref finalArmorCalculations, "finalArmorCalculations", FinalArmorCalculations.Custom);
             Scribe_Values.Look(ref sharpToBluntThreshold, "sharpToBluntThreshold", 0.2f);
             Scribe_Values.Look(ref yayoCombatCompat, "yayoCombatCompat", false);
+            Scribe_Values.Look(ref vanillaCombatReloadedCompatibility, "vanillaCombatReloadedCompatibility", false);
             Scribe_Values.Look(ref reliableArmors, "reliableArmor", true);
             Scribe_Values.Look(ref debugLogging, "debugLogging", false);
             Scribe_Values.Look(ref doTracking, "doTracking", false);
